@@ -79,7 +79,6 @@ public class RedPhoneService extends Service implements CallStateListener {
   private final List<Message> bufferedEvents = new LinkedList<Message>();
   private final IBinder binder               = new RedPhoneServiceBinder();
 
-  private OutgoingRinger outgoingRinger;
   private IncomingRinger incomingRinger;
 
   private int state;
@@ -150,7 +149,6 @@ public class RedPhoneService extends Service implements CallStateListener {
     am.setStreamVolume(AudioManager.STREAM_VOICE_CALL,
                        am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL), 0 );
 
-    this.outgoingRinger = new OutgoingRinger(this);
     this.incomingRinger = new IncomingRinger(this);
   }
 
@@ -343,7 +341,6 @@ public class RedPhoneService extends Service implements CallStateListener {
     statusBarManager.setCallEnded();
 
     incomingRinger.stop();
-    outgoingRinger.stop();
 
     if (currentCallManager != null) {
       currentCallManager.terminate();
@@ -408,12 +405,10 @@ public class RedPhoneService extends Service implements CallStateListener {
   }
 
   public void notifyCallRinging() {
-    outgoingRinger.playRing();
     sendMessage(RedPhone.HANDLE_CALL_RINGING, null);
   }
 
   public void notifyCallConnected(String sas) {
-    outgoingRinger.playComplete();
     if (!partialWakeLock.isHeld()) partialWakeLock.acquire();
     if (fullWakeLock.isHeld())     fullWakeLock.release();
     state = RedPhone.STATE_CONNECTED;
@@ -446,40 +441,34 @@ public class RedPhoneService extends Service implements CallStateListener {
 
   public void notifyHandshakeFailed() {
     state = RedPhone.STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(RedPhone.HANDLE_HANDSHAKE_FAILED, null);
     this.terminate();
   }
 
   public void notifyRecipientUnavailable() {
     state = RedPhone.STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(RedPhone.HANDLE_RECIPIENT_UNAVAILABLE, null);
     this.terminate();
   }
 
   public void notifyPerformingHandshake() {
-    outgoingRinger.playHandshake();
     sendMessage(RedPhone.HANDLE_PERFORMING_HANDSHAKE, null);
   }
 
   public void notifyServerFailure() {
     state = RedPhone.STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(RedPhone.HANDLE_SERVER_FAILURE, null);
     this.terminate();
   }
 
   public void notifyClientFailure() {
     state = RedPhone.STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(RedPhone.HANDLE_CLIENT_FAILURE, null);
     this.terminate();
   }
 
   public void notifyLoginFailed() {
     state = RedPhone.STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(RedPhone.HANDLE_LOGIN_FAILED, null);
     this.terminate();
   }
@@ -505,10 +494,14 @@ public class RedPhoneService extends Service implements CallStateListener {
   }
 
   public void notifyCallConnecting() {
-    outgoingRinger.playSonar();
+    sendMessage(RedPhone.HANDLE_CALL_CONNECTING);
   }
 
   public void notifyWaitingForResponder() {}
+
+  private void sendMessage(int code) {
+    sendMessage(code, null);
+  }
 
   private void sendMessage(int code, Object extra) {
     Message message = Message.obtain();

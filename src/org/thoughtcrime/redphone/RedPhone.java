@@ -40,6 +40,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import org.thoughtcrime.redphone.audio.OutgoingRinger;
 import org.thoughtcrime.redphone.codec.CodecSetupException;
 import org.thoughtcrime.redphone.contacts.PersonInfo;
 import org.thoughtcrime.redphone.directory.DirectoryUpdateReceiver;
@@ -88,6 +89,7 @@ public class RedPhone extends Activity {
   public static final int HANDLE_CLIENT_FAILURE          = 15;
   public static final int HANDLE_DEBUG_INFO              = 16;
   public static final int HANDLE_NO_SUCH_USER            = 17;
+  public static final int HANDLE_CALL_CONNECTING         = 18;
 
   private final HandlerThread backgroundTaskThread = new HandlerThread("BackgroundUITasks");
   private final Handler callStateHandler           = new CallStateHandler();
@@ -96,6 +98,8 @@ public class RedPhone extends Activity {
   private boolean deliveringTimingData = false;
   private RedPhoneService redPhoneService;
   private CallScreen callScreen;
+  private OutgoingRinger outgoingRinger;
+
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -164,6 +168,8 @@ public class RedPhone extends Activity {
     callScreen.setHangupButtonListener(new HangupButtonListener());
     callScreen.setIncomingCallActionListener(new IncomingCallActionListener());
 
+    outgoingRinger = new OutgoingRinger(this);
+
     DirectoryUpdateReceiver.scheduleDirectoryUpdate(this);
   }
 
@@ -224,10 +230,12 @@ public class RedPhone extends Activity {
   }
 
   private void handleCallRinging() {
+    outgoingRinger.playRing();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Ringing...");
   }
 
   private void handleCallBusy() {
+    outgoingRinger.playBusy();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Busy...");
 
     state = STATE_IDLE;
@@ -235,6 +243,7 @@ public class RedPhone extends Activity {
   }
 
   private void handleCallConnected(String sas) {
+    outgoingRinger.playComplete();
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_IGNORE_CHEEK_PRESSES);
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Connected", sas);
     state = STATE_CONNECTED;
@@ -251,28 +260,33 @@ public class RedPhone extends Activity {
 
   private void handleHandshakeFailed() {
     state = STATE_IDLE;
+    outgoingRinger.playFailure();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Handshake failed!");
     delayedFinish();
   }
 
   private void handleRecipientUnavailable() {
     state = STATE_IDLE;
+    outgoingRinger.playFailure();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Recipient unavailable");
     delayedFinish();
   }
 
   private void handlePerformingHandshake() {
+    outgoingRinger.playHandshake();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Performing handshake...");
   }
 
   private void handleServerFailure() {
     state = STATE_IDLE;
+    outgoingRinger.playFailure();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Server failed!");
     delayedFinish();
   }
 
   private void handleClientFailure(String msg) {
     state = STATE_IDLE;
+    outgoingRinger.playFailure();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Client failed");
     if( msg != null && !isFinishing() ) {
       AlertDialog.Builder ad = new AlertDialog.Builder(this);
@@ -290,6 +304,7 @@ public class RedPhone extends Activity {
 
   private void handleLoginFailed() {
     state = STATE_IDLE;
+    outgoingRinger.playFailure();
     callScreen.setActiveCall(redPhoneService.getRemotePersonInfo(), "Login failed!");
     delayedFinish();
   }
@@ -310,6 +325,7 @@ public class RedPhone extends Activity {
 
   private void handleNoSuchUser(final String user) {
     if (isFinishing()) return; // XXX Stuart added this check above, not sure why, so I'm repeating in ignorance. - moxie
+    outgoingRinger.playFailure();
     AlertDialog.Builder dialog = new AlertDialog.Builder(this);
     dialog.setTitle("Number not registered with RedPhone!");
     dialog.setIcon(android.R.drawable.ic_dialog_info);
@@ -332,6 +348,10 @@ public class RedPhone extends Activity {
     dialog.show();
   }
 
+  private void handleCallConnecting() {
+    outgoingRinger.playSonar();
+  }
+
   private void handleCodecFailure(CodecSetupException e) {
     Log.w("RedPhone", e);
     Toast.makeText(this, "Codec Failed to Initialize", Toast.LENGTH_LONG).show();
@@ -342,6 +362,7 @@ public class RedPhone extends Activity {
     callStateHandler.postDelayed(new Runnable() {
 
     public void run() {
+      outgoingRinger.stop();
       Log.w("RedPhone", "Releasing wake locks...");
       if (Release.DELIVER_DIAGNOSTIC_DATA &&
           ApplicationPreferencesActivity.getAskUserToSendDiagnosticData(RedPhone.this)) {
@@ -377,6 +398,7 @@ public class RedPhone extends Activity {
       case HANDLE_LOGIN_FAILED:            handleLoginFailed();                                     break;
       case HANDLE_CLIENT_FAILURE:			     handleClientFailure((String)message.obj);                break;
       case HANDLE_DEBUG_INFO:				       handleDebugInfo((String)message.obj);					          break;
+      case HANDLE_CALL_CONNECTING:         handleCallConnecting();                                  break;
       }
     }
   }
